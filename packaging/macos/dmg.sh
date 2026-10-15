@@ -18,8 +18,9 @@ verify_dmg_app() (
   notarized="${2:-0}"
   check_work="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/figcraft-dmg-check.XXXXXX")"
   mounted=0
-  # Invoked by the EXIT trap, including failures under errexit.
-  # shellcheck disable=SC2329
+  # Invoked by the EXIT trap, including failures under errexit. ShellCheck 0.9 calls the
+  # nested callback unreachable (SC2317); 0.11 calls it unused (SC2329).
+  # shellcheck disable=SC2317,SC2329
   cleanup_dmg_check() {
     local check_exit=$?
     trap - EXIT
