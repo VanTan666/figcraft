@@ -75,7 +75,7 @@ interaction feel not yet compared.
 | Tool | Status | Notes |
 |---|---|---|
 | Move, hand (Space), zoom (hold Z, Alt out, drag area) | done | |
-| Frame (presets panel, swap orientation), section, slice | done | |
+| Frame (presets panel, swap orientation), section, slice | done | Custom frame sizes can be saved, replaced by name and deleted in the Frame panel; stored in app preferences across documents (#381). Creating a frame remains undoable. |
 | Rectangle, ellipse (arc handles and Design panel arc fields), polygon, star, line, arrow; Shift/Alt | done | Alt draws lines from the centre too (`shapes_behaviour_tests`) |
 | Corner radius handles (inside each corner of a rectangle or frame, a polygon's or star's top point; Alt: one corner), star ratio handle; Count and Ratio fields | done | handles hide under 48 px on screen; no count handle on the canvas (the Count field instead); corner smoothing rounds rectangles and frames only |
 | Pen: vector networks, branch, close, bend; pencil | done | pen pressure on Windows and from browser styluses only; outside edit mode the Pen closes on its first point, connects to its other points and continues a selected open path from an end point (`vector_multi_behaviour_tests`) |
@@ -166,6 +166,7 @@ in the table. `crates/ui-egui/src/shortcut_keys_tests.rs` drives the keys a look
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | Custom frame presets (#381): named sizes saved in app preferences, reuse beside existing frames, replacement by name and deletion. |
 | 2026-10-15 | minor | Hex fields take CSS colour names (`red` → `FF0000`): fills, strokes, effects, grids, variables, backgrounds and the colour picker |
 | 2026-10-15 | minor | Typography: drag the line-height, letter-spacing and paragraph-spacing icons to scrub their values; shared numeric-field rates, resize cursor and one Undo step per gesture (#373). |
 | 2026-10-15 | minor | A click or Tab into a one-line field selects all of its text (hex, inline, name, search and dialog fields); the first click into a fill's hex takes the keyboard |
