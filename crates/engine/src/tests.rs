@@ -418,6 +418,9 @@ fn every_command_survives_junk_params() {
         // Custom frame preset names and dimensions.
         json!({"name": "bad\u{0}name", "width": "NaN", "height": -1e308, "preset": [1]}),
         json!({"name": "size", "width": 1e308, "height": {"value": 10}, "preset": "missing"}),
+        // Selection color slots: malformed indexes, ranges and paints.
+        json!({"targets": [{"id": 2, "fills": true, "index": -1, "range": [0, 1e308]}], "paint": {"type": "solid", "color": "invalid"}}),
+        json!({"targets": [{"id": 2, "fills": "yes", "index": 0, "range": [4, 1]}], "style": 5}),
         // Rotation origins and placing with a tool as junk.
         json!({"tool": [1], "x": 1e308, "y": "NaN", "reset": "maybe", "on": {"x": 1}}),
         json!({"tool": "frame", "x": -1e308, "y": 1e308, "reset": true, "on": "yes"}),
