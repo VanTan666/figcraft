@@ -56,10 +56,6 @@ fi
 
 echo "==> FigCraft $VERSION for macOS ($ARCH; ${BINS[*]}), identity: $IDENTITY, notarize: $NOTARIZE"
 
-# Exercise the image builder before building/signing the real release app. This stays in the
-# macOS release job when its workflow is delegated to craft-common-actions.
-bash "$HERE/dmg-test.sh"
-
 # ---- build -------------------------------------------------------------------------------------
 if [ "$SKIP_BUILD" = 0 ]; then
   args=()
