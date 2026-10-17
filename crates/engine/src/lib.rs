@@ -6,6 +6,8 @@
 //! change is one undo step. Pointer tools ([`tools`]) and text editing reduce to the same document
 //! edits and are journaled the same way.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+// Tests make and inspect files directly; shipped code goes through `file_access` (clippy.toml).
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 pub mod al_keys;
 pub mod annotations;
@@ -25,6 +27,7 @@ pub mod devcompare;
 pub mod devinspect;
 pub mod distance;
 pub mod drop;
+pub mod file_access;
 pub mod guard;
 pub mod guides;
 pub mod inspect;
@@ -43,6 +46,8 @@ pub mod plugins;
 pub mod proto_run;
 pub mod rename;
 pub mod rotation_origin;
+pub mod selection_colors;
+pub mod selection_spacing;
 pub mod shape_handles;
 pub mod shapebuilder;
 pub mod snap;
@@ -1657,6 +1662,8 @@ mod menu_gaps_tests;
 #[cfg(test)]
 mod nested_override_tests;
 #[cfg(test)]
+mod node_set_refusals_tests;
+#[cfg(test)]
 mod online_tests;
 #[cfg(test)]
 mod open_issues_tests;
@@ -1798,3 +1805,6 @@ mod version_tests;
 mod view_behaviour_tests;
 #[cfg(test)]
 mod widgets_tests;
+
+#[cfg(test)]
+mod selection_spacing_tests;
