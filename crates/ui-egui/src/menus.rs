@@ -615,7 +615,7 @@ fn submenu_at<R>(
 pub(crate) fn separator(ui: &mut Ui) {
     ui.add_space(4.0);
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().line_segment([r.left_center(), r.right_center()], Stroke::new(1.0, Color32::from_white_alpha(30)));
+    ui.painter().line_segment([r.left_center(), r.right_center()], Stroke::new(1.0, Tokens::get(ui.ctx()).border));
     ui.add_space(4.0);
 }
 
@@ -759,7 +759,7 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
                 plain_row_hover(ui, &resp);
                 a11y::menu_item(&resp, tr("Actions…"), crate::shortcuts::shortcut("app.actions").unwrap_or(""), None);
-                ui.painter().rect_filled(r.shrink(2.0), CornerRadius::same(5), Color32::from_white_alpha(18));
+                ui.painter().rect_filled(r.shrink(2.0), CornerRadius::same(5), t.hover);
                 icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 16.0, r.center().y), vec2(14.0, 14.0)), Icon::Search, t.menu_dim);
                 ui.painter().text(pos2(r.min.x + 32.0, r.center().y), Align2::LEFT_CENTER, tr("Actions…"), regular(12.0), t.menu_dim);
                 ui.painter().text(

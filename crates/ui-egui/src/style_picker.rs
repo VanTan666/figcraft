@@ -287,7 +287,7 @@ struct Frame {
     budget: usize,
 }
 
-/// An icon button on the dark popover.
+/// An icon button on the popover.
 fn menu_icon(ui: &mut Ui, rect: Rect, icon: Icon, tip: &str, on: bool) -> Response {
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(rect, ui.id().with(("style_picker_btn", tip)), Sense::click()).tip(tip);
@@ -298,7 +298,7 @@ fn menu_icon(ui: &mut Ui, rect: Rect, icon: Icon, tip: &str, on: bool) -> Respon
     resp
 }
 
-/// A text button on the dark popover.
+/// A text button on the popover.
 fn menu_button(ui: &mut Ui, label: &str) -> Response {
     let t = Tokens::get(ui.ctx());
     let galley = ui.painter().layout_no_wrap(label.to_string(), regular(11.0), t.menu_text);
@@ -465,7 +465,7 @@ fn style_grid(ui: &mut Ui, list: &[(&Style, Key)], applied: Option<&Key>, editab
                 let (r, resp) = ui.allocate_exact_size(cell, Sense::click());
                 match text_def(s) {
                     Some(def) => {
-                        let fill = if resp.hovered() { t.menu_hover } else { Color32::from_white_alpha(14) };
+                        let fill = if resp.hovered() { t.menu_hover } else { t.field };
                         ui.painter().rect_filled(r, CornerRadius::same(5), fill);
                         let sample_w = ui.painter().layout_no_wrap("Ag".into(), regular(18.0), t.menu_text).size().x;
                         text_sample(
@@ -705,7 +705,7 @@ fn grid_label(g: &figcraft_doc::LayoutGrid) -> String {
 fn text_properties(ui: &mut Ui, id: &str, def: &TextStyle, out: &mut Frame) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(W, 40.0), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(5), Color32::from_white_alpha(14));
+    ui.painter().rect_filled(r, CornerRadius::same(5), t.field);
     text_sample(ui, def, "Ag", 28.0, pos2(r.min.x + 10.0, r.center().y), 60.0, r.height() - 4.0, &mut out.budget);
     let summary = format!("{} {}\n{}", def.font_family, def.font_style, text_meta(def));
     let g = ui.painter().layout(summary, regular(10.5), t.menu_dim, W - 80.0);
@@ -719,34 +719,37 @@ fn text_properties(ui: &mut Ui, id: &str, def: &TextStyle, out: &mut Frame) {
         }
     };
     let half = (W - 8.0) / 2.0;
-    // The dropdowns' menus open outside the dark scope (they're regular popups).
-    let (family_resp, style_resp) = crate::theme::on_dark(ui, |ui| {
-        ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
-        let family_resp = widgets::dropdown(ui, &def.font_family, W, None).on_hover_text(tr("Font"));
-        let mut style_resp = None;
-        ui.horizontal(|ui| {
-            style_resp = Some(widgets::dropdown(ui, &def.font_style, half, None).on_hover_text(tr("Font style")));
-            if let Some(widgets::FieldEdit::Set(v) | widgets::FieldEdit::Scrub(v, true)) =
-                widgets::number_field(ui, Id::new(("ts_size", id)), widgets::Lead::Text(tr("Size")), Some(def.font_size), "", half, 1.0)
-            {
-                set(out, &|d| d.font_size = v.clamp(1.0, 5000.0));
-            }
-        });
-        ui.horizontal(|ui| {
-            if let Some(v) = widgets::text_field(ui, Id::new(("ts_lh", id)), &def.line_height.label(), half, tr("Line height"))
-                && let Some(lh) = crate::typography::parse_line_height(&v, Some(def.line_height)).and_then(|v| crate::typography::line_height_of(&v))
-            {
-                set(out, &|d| d.line_height = lh);
-            }
-            if let Some(v) = widgets::text_field(ui, Id::new(("ts_ls", id)), &def.letter_spacing.label(), half, tr("Letter spacing"))
-                && let Some(ls) =
-                    crate::typography::parse_letter_spacing(&v, Some(def.letter_spacing)).and_then(|v| crate::typography::letter_spacing_of(&v))
-            {
-                set(out, &|d| d.letter_spacing = ls);
-            }
-        });
-        (family_resp, style_resp)
-    });
+    // Keep the editor controls and their popup menus on the application's theme.
+    let (family_resp, style_resp) = ui
+        .scope(|ui| {
+            ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+            let family_resp = widgets::dropdown(ui, &def.font_family, W, None).on_hover_text(tr("Font"));
+            let mut style_resp = None;
+            ui.horizontal(|ui| {
+                style_resp = Some(widgets::dropdown(ui, &def.font_style, half, None).on_hover_text(tr("Font style")));
+                if let Some(widgets::FieldEdit::Set(v) | widgets::FieldEdit::Scrub(v, true)) =
+                    widgets::number_field(ui, Id::new(("ts_size", id)), widgets::Lead::Text(tr("Size")), Some(def.font_size), "", half, 1.0)
+                {
+                    set(out, &|d| d.font_size = v.clamp(1.0, 5000.0));
+                }
+            });
+            ui.horizontal(|ui| {
+                if let Some(v) = widgets::text_field(ui, Id::new(("ts_lh", id)), &def.line_height.label(), half, tr("Line height"))
+                    && let Some(lh) =
+                        crate::typography::parse_line_height(&v, Some(def.line_height)).and_then(|v| crate::typography::line_height_of(&v))
+                {
+                    set(out, &|d| d.line_height = lh);
+                }
+                if let Some(v) = widgets::text_field(ui, Id::new(("ts_ls", id)), &def.letter_spacing.label(), half, tr("Letter spacing"))
+                    && let Some(ls) =
+                        crate::typography::parse_letter_spacing(&v, Some(def.letter_spacing)).and_then(|v| crate::typography::letter_spacing_of(&v))
+                {
+                    set(out, &|d| d.letter_spacing = ls);
+                }
+            });
+            (family_resp, style_resp)
+        })
+        .inner;
     crate::right::menu_popup(&family_resp).width(260.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         if let Some(f) = crate::typography::font_picker(ui, Some(&def.font_family), family_resp.clicked()).picked {
             set(out, &|d| {

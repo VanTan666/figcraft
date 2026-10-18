@@ -150,6 +150,8 @@ mod menu_aim_tests;
 #[cfg(test)]
 mod menu_input_tests;
 #[cfg(test)]
+mod menu_theme_tests;
+#[cfg(test)]
 mod missing_fonts_tests;
 #[cfg(test)]
 mod online_tests;

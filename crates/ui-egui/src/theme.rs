@@ -85,10 +85,10 @@ impl Tokens {
             tab_bar: Color32::from_rgb(0xE8, 0xE8, 0xE8),
             tab_active: Color32::from_rgb(0xFF, 0xFF, 0xFF),
             shadow: Color32::from_black_alpha(40),
-            menu: Color32::from_rgb(0x1E, 0x1E, 0x1E),
-            menu_text: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-            menu_hover: ACCENT,
-            menu_dim: Color32::from_rgb(0x9A, 0x9A, 0x9A),
+            menu: Color32::WHITE,
+            menu_text: Color32::from_rgb(0x1E, 0x1E, 0x1E),
+            menu_hover: Color32::from_rgb(0xF5, 0xF5, 0xF5),
+            menu_dim: Color32::from_rgb(0x6E, 0x6E, 0x6E),
             focus: Color32::from_rgb(0x00, 0x6B, 0xD1),
         }
     }
@@ -207,23 +207,6 @@ fn visuals(t: Tokens) -> Visuals {
     v.window_shadow = egui::Shadow { offset: [0, 8], blur: 24, spread: 0, color: t.shadow };
     v.text_cursor.stroke = Stroke::new(1.0, t.accent);
     v
-}
-
-/// Draw `f` with the dark tokens and visuals: controls on the dark popovers (the style browser's
-/// style editor), whichever theme the app shows.
-pub fn on_dark<R>(ui: &mut egui::Ui, f: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let ctx = ui.ctx().clone();
-    let saved = Tokens::get(&ctx);
-    let dark = Tokens::dark();
-    ctx.data_mut(|d| d.insert_temp(tokens_id(), dark));
-    let r = ui
-        .scope(|ui| {
-            *ui.visuals_mut() = visuals(dark);
-            f(ui)
-        })
-        .inner;
-    ctx.data_mut(|d| d.insert_temp(tokens_id(), saved));
-    r
 }
 
 /// UI fonts: Inter (from the craft-fonts build input) when present, else egui's defaults; with
