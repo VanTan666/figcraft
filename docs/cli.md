@@ -195,3 +195,7 @@ carry overrides at every level, in one file and as a library in another. It then
 table with the build time and edits of a deep main component (icon colour, glyph size, an added
 layer) and of the 72 button mains, where all copies follow. Zeros are dropped and counts above
 100,000 are capped to 100,000; `--instances 0` skips this table.
+
+### Import diagnostics (#467)
+
+`figcraft-cli info input.fig` prints each reported kind of loss or approximation with its occurrence count, including one-off notes (`×1`). `info --json` retains the original `notes` strings and adds `noteCounts`, an array of `{message, occurrences}`. Counts are diagnostic occurrences, not a count of all unknown fields or unique affected layers. Native repair notes are represented the same way. Both `.fig` mapping and REST import count repeated diagnostics; the warning list remains bounded and in first-seen order.

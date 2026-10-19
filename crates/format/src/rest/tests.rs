@@ -744,3 +744,16 @@ fn the_fig_import_sets_its_own_layer_cap() {
     assert_eq!(doc.node_count(), 5);
     assert!(warnings.iter().any(|w| w.contains("more than 4 layers")), "{warnings:?}");
 }
+
+#[test]
+fn diagnostic_counts_remain_bounded_ordered_and_count_known_kinds_after_the_cap() {
+    let mut warnings = Warnings::default();
+    for i in 0..MAX_WARNINGS + 20 {
+        warnings.add(format!("unsupported kind {i}"));
+    }
+    warnings.add("unsupported kind 0".into());
+    let notes = warnings.finish();
+    assert_eq!(notes.len(), MAX_WARNINGS);
+    assert_eq!(notes[0], "unsupported kind 0 (×2)");
+    assert_eq!(notes[1], "unsupported kind 1");
+}

@@ -172,3 +172,30 @@ fn commands_json_lists_everything() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(v.as_array().unwrap().len() > 200);
 }
+
+#[test]
+fn info_exposes_import_diagnostic_occurrences_without_replacing_notes() {
+    let dir = tmp("import-counts");
+    let path = dir.join("losses.json");
+    let file = serde_json::json!({"name":"Synthetic","document":{"id":"0:0","type":"DOCUMENT","children":[
+        {"id":"0:1","type":"CANVAS","children":[
+            {"id":"1:1","type":"RECTANGLE","name":"One","fills":[{"type":"UNSUPPORTED_PAINT"}]},
+            {"id":"1:2","type":"RECTANGLE","name":"Two","fills":[{"type":"UNSUPPORTED_PAINT"}]},
+            {"id":"1:3","type":"RECTANGLE","name":"Three","fills":[{"type":"SECOND_PAINT"}]}
+        ]}
+    ]}});
+    std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+    let out = bin().args(["info", "--json"]).arg(&path).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let counts = value["noteCounts"].as_array().unwrap();
+    assert!(counts.iter().any(|c| c["message"] == "UNSUPPORTED_PAINT paints are not supported and were skipped" && c["occurrences"] == 2));
+    assert!(counts.iter().any(|c| c["message"] == "SECOND_PAINT paints are not supported and were skipped" && c["occurrences"] == 1));
+    assert!(value["notes"].as_array().unwrap().iter().any(|n| n.as_str().is_some_and(|s| s.ends_with("(×2)"))));
+    let text = bin().arg("info").arg(&path).output().unwrap();
+    let stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(text.status.success());
+    assert!(stderr.contains("UNSUPPORTED_PAINT paints are not supported and were skipped (×2)"), "{stderr}");
+    assert!(stderr.contains("SECOND_PAINT paints are not supported and were skipped (×1)"), "{stderr}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

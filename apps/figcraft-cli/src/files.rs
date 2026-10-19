@@ -137,6 +137,15 @@ fn page_pdf(doc: &Document, page: NodeId, print: &PrintSettings) -> CliResult<Ve
     r.map_err(|e| CliError::Failed(e.to_string()))
 }
 
+/// Importers use a counted suffix for repeated diagnostics; ordinary repair notes occur once.
+/// Keep the original `notes` array intact for existing consumers.
+fn counted_note(note: &str) -> (&str, usize) {
+    note.strip_suffix(')')
+        .and_then(|s| s.rsplit_once(" (×"))
+        .and_then(|(message, n)| n.parse::<usize>().ok().filter(|n| *n > 0).map(|n| (message, n)))
+        .unwrap_or((note, 1))
+}
+
 pub fn info(path: &str, as_json: bool) -> CliResult<ExitCode> {
     let (doc, notes) = load_noted(path)?;
     let pages: Vec<Value> = doc
@@ -165,6 +174,10 @@ pub fn info(path: &str, as_json: bool) -> CliResult<ExitCode> {
         "variables": doc.variables.variables.len(),
         "images": doc.images.len(),
         "notes": notes,
+        "noteCounts": notes.iter().map(|n| {
+            let (message, occurrences) = counted_note(n);
+            json!({"message": message, "occurrences": occurrences})
+        }).collect::<Vec<_>>(),
         "missingFonts": missing.iter().map(|m| json!({"family": m.family, "layers": m.layers})).collect::<Vec<_>>(),
     });
     if as_json {
@@ -172,7 +185,8 @@ pub fn info(path: &str, as_json: bool) -> CliResult<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     for n in &notes {
-        eprintln!("note: {n}");
+        let (message, occurrences) = counted_note(n);
+        eprintln!("note: {message} (×{occurrences})");
     }
     println!(
         "{} — {} ({} nodes, {} styles, {} variables, {} images)",

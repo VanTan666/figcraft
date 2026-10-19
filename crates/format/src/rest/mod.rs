@@ -331,13 +331,13 @@ fn children(v: &Value) -> &[Value] {
 
 /// Distinct warnings in first-seen order, with repeat counts.
 #[derive(Default)]
-struct Warnings {
+pub(crate) struct Warnings {
     list: Vec<(String, usize)>,
     index: BTreeMap<String, usize>,
 }
 
 impl Warnings {
-    fn add(&mut self, msg: String) {
+    pub(crate) fn add(&mut self, msg: String) {
         if let Some(i) = self.index.get(&msg) {
             if let Some(e) = self.list.get_mut(*i) {
                 e.1 += 1;
@@ -348,7 +348,7 @@ impl Warnings {
         }
     }
 
-    fn finish(self) -> Vec<String> {
+    pub(crate) fn finish(self) -> Vec<String> {
         self.list.into_iter().map(|(m, n)| if n > 1 { format!("{m} (×{n})") } else { m }).collect()
     }
 }

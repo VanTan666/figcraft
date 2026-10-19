@@ -1200,3 +1200,25 @@ fn dump_samples() {
         std::fs::write(format!("{out}/{stem}.rest.json"), serde_json::to_string_pretty(&rest).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn repeated_mapping_losses_retain_counts_through_full_fig_import() {
+    let msg = o(vec![(
+        "nodeChanges",
+        arr(vec![
+            node(0, None, "DOCUMENT", "Synthetic", vec![]),
+            node(1, Some((0, "!")), "CANVAS", "Page", vec![]),
+            node(2, Some((1, "!")), "STICKY", "One", vec![]),
+            node(3, Some((1, "\"")), "STICKY", "Two", vec![]),
+            node(4, Some((1, "#")), "STICKY", "Three", vec![]),
+            node(5, Some((1, "$")), "SHAPE_WITH_TEXT", "Shape", vec![]),
+        ]),
+    )]);
+    let bytes = zip_file(&canvas(&schema(), &msg));
+    let (doc, notes) = import(&bytes, "Synthetic").unwrap();
+    assert_eq!(doc.pages.len(), 1);
+    let repeated = notes.iter().filter(|n| n.starts_with("sticky layers import as")).collect::<Vec<_>>();
+    assert_eq!(repeated.len(), 1, "one diagnostic per kind: {notes:?}");
+    assert!(repeated[0].ends_with("(×3)"), "{notes:?}");
+    assert!(notes.iter().any(|n| n == "shape with text layers import as frames with their text"), "one-off diagnostics survive: {notes:?}");
+}
