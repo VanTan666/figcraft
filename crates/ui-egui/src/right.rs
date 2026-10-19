@@ -49,6 +49,7 @@ impl FigApp {
         };
         let Ok(doc) = self.session.doc() else { return };
         let values: Vec<(NodeId, f64)> = ids.iter().filter_map(|i| Some((*i, rel.apply(shown(doc.node(*i)?))?))).collect();
+        let nested = self.session.ds().is_ok_and(|d| d.interaction.is_some());
         if values.is_empty() || self.session.begin_interaction("Edit").is_err() {
             return;
         }
@@ -57,7 +58,9 @@ impl FigApp {
                 self.failed("node.set", &e);
             }
         }
-        let _ = self.session.commit_interaction();
+        if !nested {
+            let _ = self.session.commit_interaction();
+        }
     }
 
     /// Apply a field edit through any command: `params` builds the command's params from the value.

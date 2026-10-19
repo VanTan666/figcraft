@@ -22,6 +22,7 @@ pub mod dev_mode;
 pub mod dialogs;
 pub mod export_panel;
 pub mod field_math;
+mod field_wheel;
 pub mod font_preview;
 pub mod frame_labels;
 pub mod frame_presets;
@@ -1239,6 +1240,7 @@ impl FigApp {
 
     /// Per-frame logic that doesn't draw (control requests, theme, language).
     pub fn logic(&mut self, ctx: &egui::Context) {
+        field_wheel::prepare(ctx, &mut self.session);
         if self.language.as_ref() != Some(&self.session.prefs.language) {
             i18n::set(&self.session.prefs.language, self.services.system_language().as_deref());
             self.language = Some(self.session.prefs.language.clone());

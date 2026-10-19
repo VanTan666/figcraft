@@ -613,6 +613,8 @@ pub struct Prefs {
     pub rename_duplicates: bool,
     pub highlight_on_hover: bool,
     pub number_keys_opacity: bool,
+    /// Opt-in wheel stepping of focused numeric fields.
+    pub number_field_wheel: bool,
     pub show_dimensions: bool,
     /// "system" by default; an explicit "light" or "dark" choice stays saved.
     pub theme: String,
@@ -691,6 +693,7 @@ impl Default for Prefs {
             rename_duplicates: false,
             highlight_on_hover: true,
             number_keys_opacity: true,
+            number_field_wheel: false,
             show_dimensions: true,
             theme: "system".into(),
             panel_widths: (240.0, 240.0),

@@ -549,3 +549,127 @@ fn a_label_too_long_for_its_field_ends_in_an_ellipsis_before_the_value() {
     assert!(field.contains_rect(*l) && field.contains_rect(*v), "both inside the field {field:?}: {l:?} {v:?}");
     assert!(l.max.x < v.min.x, "the label stops before the value: {l:?} {v:?}");
 }
+
+fn wheel(u: &mut Ui, at: Pos2, unit: egui::MouseWheelUnit, dy: f32, modifiers: Modifiers) {
+    u.frame_with(
+        vec![Event::PointerMoved(at), Event::MouseWheel { unit, delta: egui::vec2(0.0, dy), phase: egui::TouchPhase::Move, modifiers }],
+        modifiers,
+    );
+}
+
+fn wheel_end(u: &mut Ui) {
+    // Idle closes the gesture even when no other input arrives.
+    for _ in 0..30 {
+        u.frame(vec![]);
+    }
+}
+
+#[test]
+fn wheel_is_opt_in_and_requires_focus_and_hover() {
+    let (mut u, a, _) = setup();
+    let (p, _) = field(&mut u, "X");
+    click(&mut u, p);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    assert_eq!(geom(&u, a).0, 10.0, "off by default");
+    u.app.session.execute("pref.numberFieldWheel", &json!({"on":true})).unwrap();
+    wheel(&mut u, pos2(600.0, 400.0), egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    assert_eq!(geom(&u, a).0, 10.0, "pointer must be on the field");
+    u.frame(vec![Event::PointerMoved(p)]);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    assert_eq!(geom(&u, a).0, 11.0);
+    wheel_end(&mut u);
+    key(&mut u, Key::Escape, Modifiers::NONE);
+    click(&mut u, pos2(600.0, 400.0));
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    assert_eq!(geom(&u, a).0, 11.0, "hover without focus does not edit");
+}
+
+#[test]
+fn wheel_gesture_accumulates_trackpad_deltas_and_is_one_undo_step() {
+    let (mut u, a, _) = setup();
+    u.app.session.prefs.number_field_wheel = true;
+    let (p, _) = field(&mut u, "X");
+    click(&mut u, p);
+    let before = undo_steps(&u);
+    for _ in 0..3 {
+        wheel(&mut u, p, egui::MouseWheelUnit::Point, 10.0, Modifiers::NONE);
+    }
+    assert_eq!(geom(&u, a).0, 10.0, "fractions have not yet reached a step");
+    wheel(&mut u, p, egui::MouseWheelUnit::Point, 10.0, Modifiers::NONE);
+    assert_eq!(geom(&u, a).0, 11.0);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 2.0, Modifiers::NONE);
+    assert_eq!(geom(&u, a).0, 13.0);
+    wheel_end(&mut u);
+    assert_eq!(undo_steps(&u), before + 1);
+    u.app.session.undo().unwrap();
+    assert_eq!(geom(&u, a).0, 10.0);
+    u.app.session.redo().unwrap();
+    assert_eq!(geom(&u, a).0, 13.0);
+}
+
+#[test]
+fn wheel_respects_nudges_modifiers_and_splits_gestures() {
+    let (mut u, a, _) = setup();
+    u.app.session.prefs.number_field_wheel = true;
+    u.app.session.execute("pref.nudge", &json!({"small":2,"big":20})).unwrap();
+    let (p, _) = field(&mut u, "X");
+    click(&mut u, p);
+    let before = undo_steps(&u);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::SHIFT);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, -1.0, Modifiers::ALT);
+    assert!((geom(&u, a).0 - 31.8).abs() < 1e-6);
+    u.frame(vec![Event::PointerMoved(pos2(600.0, 400.0))]);
+    assert_eq!(undo_steps(&u), before + 3, "modifier changes and pointer leave finish separate gestures");
+}
+
+#[test]
+fn wheel_steps_mixed_values_relative_to_each_layer() {
+    let (mut u, a, b) = setup();
+    u.app.session.prefs.number_field_wheel = true;
+    u.app.session.execute("select.set", &json!({"ids":[a,b]})).unwrap();
+    let (p, shown) = field(&mut u, "Width");
+    assert_eq!(shown, "Mixed");
+    click(&mut u, p);
+    let before = undo_steps(&u);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    assert_eq!((geom(&u, a).2, geom(&u, b).2), (42.0, 22.0));
+    wheel_end(&mut u);
+    assert_eq!(undo_steps(&u), before + 1);
+    u.app.session.undo().unwrap();
+    assert_eq!((geom(&u, a).2, geom(&u, b).2), (40.0, 20.0));
+}
+
+#[test]
+fn wheel_uses_property_clamps_and_recovers_when_scrolling_back() {
+    let (mut u, a, _) = setup();
+    u.app.session.prefs.number_field_wheel = true;
+    let (p, _) = field(&mut u, "Opacity");
+    click(&mut u, p);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 10.0, Modifiers::NONE);
+    assert_eq!(u.app.session.doc().unwrap().node(a).unwrap().opacity, 1.0);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, -1.0, Modifiers::NONE);
+    assert!((u.app.session.doc().unwrap().node(a).unwrap().opacity - 0.99).abs() < 1e-6);
+    wheel_end(&mut u);
+}
+
+#[test]
+fn wheel_never_detaches_a_variable_or_intercepts_control_zoom() {
+    let (mut u, a, _) = setup();
+    u.app.session.prefs.number_field_wheel = true;
+    let (p, _) = field(&mut u, "Width");
+    click(&mut u, p);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::CTRL);
+    assert_eq!(geom(&u, a).2, 40.0);
+    let collection = u.app.session.execute("variable.createCollection", &json!({"name":"Sizes"})).unwrap()["id"].clone();
+    let variable =
+        u.app.session.execute("variable.create", &json!({"collection":collection,"name":"Width","type":"number","value":40})).unwrap()["id"].clone();
+    u.app.session.execute("variable.bind", &json!({"ids":[a],"field":"width","variable":variable})).unwrap();
+    u.frame(vec![]);
+    wheel(&mut u, p, egui::MouseWheelUnit::Line, 1.0, Modifiers::NONE);
+    wheel_end(&mut u);
+    let node = u.app.session.doc().unwrap().node(a).unwrap();
+    assert_eq!(node.width, 40.0);
+    assert!(node.bound.contains_key("width"));
+}

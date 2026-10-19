@@ -356,6 +356,45 @@ fn number_field_impl(
             crate::bidi::paint_name(ui.painter(), pos2(edit_rect.min.x, rect.center().y), &s, regular(11.0), col, edit_rect.width());
         }
     }
+    // Wheel edits share the field's normal command path, units and property clamping. A bound
+    // field returned above, so scrolling never silently detaches its variable.
+    if let Some(ticks) = crate::field_wheel::steps(ui, field_resp.id, id.with("te"), rect) {
+        let mods = ui.input(|i| i.modifiers);
+        let by = ticks
+            * if mods.shift && !mods.alt {
+                key_big
+            } else if mods.alt && !mods.shift {
+                key_step * 0.1
+            } else {
+                key_step
+            };
+        let typed_base = ui
+            .data(|d| {
+                let text = d.get_temp::<String>(editing_id)?;
+                let kept = d.get_temp::<String>(kept_id).unwrap_or_default();
+                (text != kept).then_some(text)
+            })
+            .and_then(|text| match typed(&text) {
+                Some(Edit::All(FieldEdit::Set(v))) => Some(v),
+                _ => None,
+            });
+        let base = typed_base.or(value);
+        out = Some(match base {
+            Some(v) => {
+                let next = stepped(v, 1.0, by);
+                let text = fmt_num(next);
+                ui.data_mut(|d| {
+                    if d.get_temp::<String>(editing_id).is_some() {
+                        d.insert_temp(editing_id, text.clone());
+                        d.insert_temp(kept_id, text);
+                        d.insert_temp(id.with("selectall"), true);
+                    }
+                });
+                Edit::All(FieldEdit::Set(next))
+            }
+            None => Edit::Each(Rel::Add(by)),
+        });
+    }
     // The variable button shows while the pointer is over a bindable field.
     let mut bind = None;
     if binding.is_some() && ui.data(|d| d.get_temp::<String>(editing_id)).is_none() {
