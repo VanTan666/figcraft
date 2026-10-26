@@ -30,7 +30,7 @@ verify_image() {
   ' _ "$HERE" "$1"
 }
 assert_detached() {
-  if [ -n "$(find "$TEST_WORK/checks" -mindepth 1 -print -quit)" ]; then
+  if [[ -n "$(find "$TEST_WORK/checks" -mindepth 1 -print -quit)" ]]; then
     echo "error: image check did not detach and remove its temporary directory" >&2
     exit 1
   fi

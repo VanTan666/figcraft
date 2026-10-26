@@ -24,7 +24,7 @@ verify_dmg_app() (
   cleanup_dmg_check() {
     local check_exit=$?
     trap - EXIT
-    if [ "$mounted" = 1 ]; then
+    if [[ "$mounted" = 1 ]]; then
       if ! retry hdiutil detach "$check_work/mounted"; then
         echo "error: could not detach $check_work/mounted; leaving its directory intact" >&2
         exit 1
@@ -40,12 +40,12 @@ verify_dmg_app() (
 
   check_app() {
     local app="$1"
-    if [ ! -d "$app" ]; then
+    if [[ ! -d "$app" ]]; then
       echo "error: DMG has no FigCraft.app: $app" >&2
       return 1
     fi
     codesign --verify --deep --strict --verbose=2 "$app"
-    if [ "$notarized" = 1 ]; then
+    if [[ "$notarized" = 1 ]]; then
       retry xcrun stapler validate "$app"
       retry spctl --assess --type execute -vvv "$app"
     fi
