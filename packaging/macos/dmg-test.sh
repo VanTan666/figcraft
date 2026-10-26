@@ -79,4 +79,16 @@ fi
 grep -q 'DMG has no FigCraft.app' "$TEST_WORK/missing.log"
 assert_detached
 
-echo 'DMG round trip: signed app and installation copy pass; FinderInfo in image/copy and missing app rejected; mounts cleaned up'
+# A top-level link can point outside the image at a valid signed app. Verification
+# must reject the link itself rather than validating and copying its external target.
+mkdir -p "$TEST_WORK/linked"
+ln -s "$APP" "$TEST_WORK/linked/FigCraft.app"
+create_dmg "$TEST_WORK/linked" "$TEST_WORK/linked.dmg"
+if verify_image "$TEST_WORK/linked.dmg" >"$TEST_WORK/linked.log" 2>&1; then
+  echo "error: verifier accepted a symlink instead of an app stored in the image" >&2
+  exit 1
+fi
+grep -q 'DMG has no FigCraft.app' "$TEST_WORK/linked.log"
+assert_detached
+
+echo 'DMG round trip: signed app and installation copy pass; FinderInfo in image/copy, missing app and symlink rejected; mounts cleaned up'

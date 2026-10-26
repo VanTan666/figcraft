@@ -40,7 +40,8 @@ verify_dmg_app() (
 
   check_app() {
     local app="$1"
-    if [[ ! -d "$app" ]]; then
+    # Require the app directory itself, not a link to a signed app outside the image.
+    if [[ -L "$app" || ! -d "$app" ]]; then
       echo "error: DMG has no FigCraft.app: $app" >&2
       return 1
     fi

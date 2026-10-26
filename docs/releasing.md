@@ -145,7 +145,7 @@ the app's stapled ticket and Gatekeeper acceptance in both locations. The image 
 success or failure; neither check repairs metadata. `makehybrid -hfs` is avoided because it adds
 FinderInfo to resources after signing (#387). `bash packaging/macos/dmg-test.sh` exercises this
 round trip with an ad-hoc signed fixture, rejects FinderInfo in either the image or installation
-copy and an image without the app, and checks mount cleanup. The release workflow runs it once
+copy, a missing app and a top-level app symlink, and checks mount cleanup. The release workflow runs it once
 in a separate `macOS DMG integrity` job, without signing secrets, before the shared release job.
 Local packaging runs only the real artifact checks, without repeating the fixture test.
 
