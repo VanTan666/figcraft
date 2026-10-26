@@ -6,8 +6,8 @@
 //! (`relativeTransform`, else `absoluteBoundingBox` + `rotation`), paints, strokes, effects,
 //! corners, constraints, auto layout, layout grids, export settings, text with styled runs,
 //! vectors from `fillGeometry` / `strokeGeometry`, components, component sets, instances and
-//! component properties are imported. Image fills keep their `imageRef` as the image key and
-//! show a grey placeholder unless an [`ImageResolver`] supplies the bytes (nothing is fetched).
+//! component properties (slots included) are imported. Image fills keep their `imageRef` as the
+//! image key and show a grey placeholder unless an [`ImageResolver`] supplies the bytes (nothing is fetched).
 //! Prototyping comes along: interactions (triggers, actions, transitions, easing), flows,
 //! scrolling and the prototype device. Variables come from the local variables response
 //! (`GET /v1/files/:key/variables/local`), embedded next to the file JSON or passed separately
@@ -29,11 +29,15 @@ mod fig_sources;
 #[cfg(test)]
 mod gamepad_tests;
 #[cfg(test)]
+mod grid_track_tests;
+#[cfg(test)]
 mod import_regression_tests;
 pub(crate) mod props;
 pub(crate) mod proto;
 #[cfg(test)]
 mod proto_variable_tests;
+#[cfg(test)]
+pub(crate) mod slot_tests;
 #[cfg(test)]
 mod tests;
 mod text;
@@ -61,6 +65,8 @@ const MAX_DEPTH: usize = 256;
 pub(crate) const FIG_SOURCE_FIELD: &str = "_figSource";
 /// Hidden .fig library context; accepted only by the `.fig` import ([`import_with_networks`]).
 pub(crate) const FIG_LIBRARY_CONTEXTS_FIELD: &str = "_figLibraryContexts";
+/// Ids of mains in a `.fig` file that its layer cap kept out; read only by the `.fig` import.
+pub(crate) const FIG_CAPPED_MAINS_FIELD: &str = "_figCappedMains";
 /// Longest SVG path string read from one geometry entry.
 const MAX_PATH_BYTES: usize = 4 << 20;
 /// Most path elements in one vector.
@@ -104,12 +110,25 @@ pub fn is_variables_json(v: &Value) -> bool {
 }
 
 /// The collections and variables of a local variables response (or its `meta`), checked like a
-/// file's, with the warnings about what was skipped; None when `v` isn't one.
+/// file's, with the warnings about what was skipped (and when it holds no variables at all, or
+/// fewer than its collections list); None when `v` isn't one.
 pub fn read_variables(v: &Value) -> Option<(figcraft_doc::Variables, Vec<String>)> {
-    let src = variables::source(v)?;
+    variables::source(v)?;
     let mut cx = Ctx::new(Document::new("Variables"), &no_images);
-    cx.variables(src);
-    Some((std::mem::take(&mut cx.doc.variables), cx.warnings.finish()))
+    cx.variables(v);
+    let vars = std::mem::take(&mut cx.doc.variables);
+    let mut warnings = cx.warnings.finish();
+    if vars.variables.is_empty() {
+        warnings.push("no variables found: expected `meta.variables` (an object of variables by id, next to `meta.variableCollections`)".into());
+    } else {
+        let listed = variables::listed_ids(v);
+        let read: BTreeSet<&str> = vars.variables.iter().map(|x| x.id.as_str()).collect();
+        let missing = listed.difference(&read).count();
+        if missing > 0 {
+            warnings.push(format!("{missing} of the {} variables the collections list in `variableIds` weren't imported", listed.len()));
+        }
+    }
+    Some((vars, warnings))
 }
 
 /// Import `bytes` when they are REST API file JSON; `None` when they are something else (the
@@ -168,6 +187,17 @@ pub(crate) fn import_with_networks(
     import_parts(v, None, images, networks, max_nodes, true)
 }
 
+/// [`import_with_networks`] for imports other than `.fig` (no `.fig` source identities): the
+/// `.sketch` import.
+pub(crate) fn import_with_networks_plain(
+    v: &Value,
+    images: ImageResolver,
+    networks: Vec<Option<VectorNetwork>>,
+    max_nodes: usize,
+) -> Result<(Document, Vec<String>), FormatError> {
+    import_parts(v, None, images, networks, max_nodes, false)
+}
+
 fn import_parts(
     v: &Value,
     variables: Option<&Value>,
@@ -189,7 +219,7 @@ fn import_parts(
         cx.collect_meta(e);
     }
     // Variables first: layers link to them as they are built.
-    for src in [variables::source(v), variables.and_then(variables::source)].into_iter().flatten() {
+    for src in [Some(v), variables].into_iter().flatten() {
         cx.variables(src);
     }
     if variables.is_some_and(|x| variables::source(x).is_none()) {
@@ -198,6 +228,14 @@ fn import_parts(
     cx.style_definitions(v);
     cx.networks = networks;
     cx.max_nodes = max_nodes;
+    // The `.fig` mapper already kept the layers, library copies included, within the cap; each
+    // library copy's wrapper frame is the one layer here it doesn't count (#981).
+    let contexts = if fig_sources { v.get(FIG_LIBRARY_CONTEXTS_FIELD).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() } else { &[] };
+    if fig_sources {
+        cx.capped_mains =
+            v.get(FIG_CAPPED_MAINS_FIELD).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+        cx.max_nodes = max_nodes.saturating_add(contexts.len());
+    }
     for e in entries {
         let Some(root) = e.get("document") else { continue };
         match text(root, "type") {
@@ -219,11 +257,9 @@ fn import_parts(
             None => cx.warn("entries without a node type were skipped"),
         }
     }
-    if fig_sources {
-        for context in v.get(FIG_LIBRARY_CONTEXTS_FIELD).and_then(Value::as_array).into_iter().flatten() {
-            let store = cx.doc.ensure_library_store();
-            cx.build(context, store, Space::default(), None, 0, false);
-        }
+    for context in contexts {
+        let store = cx.doc.ensure_library_store();
+        cx.build(context, store, Space::default(), None, 0, false);
     }
     // Drop the empty page the new document started with once real pages exist.
     if let Some(p) = blank
@@ -312,15 +348,16 @@ fn children(v: &Value) -> &[Value] {
     v.get("children").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default()
 }
 
-/// Distinct warnings in first-seen order, with repeat counts.
+/// Distinct warnings in first-seen order, with repeat counts. Shared with the `.fig` mapper
+/// (`crate::fig::map`), whose notes repeat per layer in the same way.
 #[derive(Default)]
-struct Warnings {
+pub(crate) struct Warnings {
     list: Vec<(String, usize)>,
     index: BTreeMap<String, usize>,
 }
 
 impl Warnings {
-    fn add(&mut self, msg: String) {
+    pub(crate) fn add(&mut self, msg: String) {
         if let Some(i) = self.index.get(&msg) {
             if let Some(e) = self.list.get_mut(*i) {
                 e.1 += 1;
@@ -331,7 +368,17 @@ impl Warnings {
         }
     }
 
-    fn finish(self) -> Vec<String> {
+    /// The notes met so far, without their counts, for the tests that ask whether one was met
+    /// (the product reads them through [`Self::finish`], with the counts).
+    #[cfg(test)]
+    pub(crate) fn seen(&self) -> impl Iterator<Item = &str> {
+        self.list.iter().map(|(msg, _)| msg.as_str())
+    }
+
+    /// The notes, each with `(×n)` after it where it was met more than once. The import report
+    /// reads that suffix off before it looks the note up in the catalogue, so a counted note is
+    /// still translated (`ui-egui`'s `note_text`).
+    pub(crate) fn finish(self) -> Vec<String> {
         self.list.into_iter().map(|(m, n)| if n > 1 { format!("{m} (×{n})") } else { m }).collect()
     }
 }
@@ -366,6 +413,10 @@ pub(crate) struct Ctx<'a> {
     style_meta: BTreeMap<&'a str, &'a Value>,
     /// Instances (imported as frames until their main is resolved) with their JSON.
     instances: Vec<(NodeId, &'a Value)>,
+    /// `SLOT` layers (imported as frames until their slot property is resolved) with their JSON.
+    slots: Vec<(NodeId, &'a Value)>,
+    /// Slot property defaults (the main's slot content id): (component or set, property) → value.
+    slot_defaults: BTreeMap<(NodeId, String), &'a Value>,
     /// Instance-swap property defaults: (component or set, property, REST id of the default).
     swap_defaults: Vec<(NodeId, String, String)>,
     /// Property definitions of component sets, shared by their variants.
@@ -383,6 +434,8 @@ pub(crate) struct Ctx<'a> {
     networks: Vec<Option<VectorNetwork>>,
     /// Most layers imported: [`MAX_NODES`], or the `.fig` import's own cap.
     max_nodes: usize,
+    /// Mains the `.fig` file has but its layer cap kept out ([`FIG_CAPPED_MAINS_FIELD`]).
+    capped_mains: BTreeSet<String>,
 }
 
 impl<'a> Ctx<'a> {
@@ -400,6 +453,8 @@ impl<'a> Ctx<'a> {
             set_meta: BTreeMap::new(),
             style_meta: BTreeMap::new(),
             instances: Vec::new(),
+            slots: Vec::new(),
+            slot_defaults: BTreeMap::new(),
             swap_defaults: Vec::new(),
             set_defs: BTreeMap::new(),
             flows: Vec::new(),
@@ -409,6 +464,7 @@ impl<'a> Ctx<'a> {
             var_modes: BTreeMap::new(),
             networks: Vec::new(),
             max_nodes: MAX_NODES,
+            capped_mains: BTreeSet::new(),
         }
     }
 
@@ -500,8 +556,10 @@ impl<'a> Ctx<'a> {
                 sources.record(id, j, primary);
             }
         }
-        if ty == "INSTANCE" {
-            self.instances.push((id, j));
+        match ty {
+            "INSTANCE" => self.instances.push((id, j)),
+            "SLOT" => self.slots.push((id, j)),
+            _ => {}
         }
         let kids = children(j);
         if kids.is_empty() {
@@ -524,8 +582,8 @@ impl<'a> Ctx<'a> {
         let point_count = || num(j, "pointCount").filter(|c| *c >= 3.0).map(|c| c.min(1000.0) as u32);
         let has_geometry = !list(j, "fillGeometry").is_empty() || !list(j, "strokeGeometry").is_empty();
         Some(match ty {
-            // Instances start as frames; `finish` links them to their main.
-            "FRAME" | "INSTANCE" => NodeKind::Frame,
+            // Instances and slots start as frames; `finish` links them to their main and property.
+            "FRAME" | "INSTANCE" | "SLOT" => NodeKind::Frame,
             "GROUP" => NodeKind::Group,
             "SECTION" => NodeKind::Section { contents_hidden: flag(j, "sectionContentsHidden").unwrap_or(false) },
             "RECTANGLE" => NodeKind::Rectangle,
@@ -736,7 +794,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// Component property definitions (variant ones are implied by the variant names).
-    fn prop_defs(&mut self, owner: NodeId, j: &Value) -> BTreeMap<String, PropDef> {
+    fn prop_defs(&mut self, owner: NodeId, j: &'a Value) -> BTreeMap<String, PropDef> {
         let mut out = BTreeMap::new();
         for (name, d) in j.get("componentPropertyDefinitions").and_then(Value::as_object).into_iter().flatten().take(256) {
             let default = d.get("defaultValue");
@@ -750,7 +808,13 @@ impl<'a> Ctx<'a> {
                     continue;
                 }
                 Some("VARIANT") => continue,
-                Some("SLOT") if self.fig_sources.is_some() => PropDef::Slot { preferred: Vec::new() },
+                Some("SLOT") => {
+                    if let Some(d) = default {
+                        self.slot_defaults.insert((owner, name.clone()), d);
+                    }
+                    self.slot_notes(d);
+                    PropDef::Slot { preferred: Vec::new() }
+                }
                 _ => {
                     self.warn("unknown component property types were skipped");
                     continue;
@@ -759,6 +823,20 @@ impl<'a> Ctx<'a> {
             out.insert(name.clone(), def);
         }
         out
+    }
+
+    /// Notes on what a slot property sets that the editor doesn't keep: preferred components (keys
+    /// of library components, not layers of the file) and limits on its content.
+    fn slot_notes(&mut self, d: &Value) {
+        if !list(d, "preferredValues").is_empty() {
+            self.warn("preferred slot component keys cannot be resolved to file nodes and were skipped");
+        }
+        // Insertion and empty-slot display only change editing aids, not what the file shows.
+        let s = d.get("slotSettings");
+        let limit = |k: &str| s.and_then(|s| num(s, k)).is_some_and(|n| n != 0.0);
+        if limit("minChildren") || limit("maxChildren") || s.and_then(|s| flag(s, "allowPreferredValuesOnly")) == Some(true) {
+            self.warn("non-default slot settings are not represented and were skipped");
+        }
     }
 
     /// Shared styles with their values (`styleDefinitions`, written by the `.fig` import: a list of
@@ -953,7 +1031,11 @@ impl<'a> Ctx<'a> {
     fn resolve_swap_defaults(&mut self) {
         for (owner, name, rest_id) in std::mem::take(&mut self.swap_defaults) {
             let Some(c) = self.component(&rest_id) else {
-                self.warn("instance swap properties whose default component isn't in the file were skipped");
+                if self.capped_mains.contains(&rest_id) {
+                    self.warn("instance swap properties whose default component was past the layer limit were skipped");
+                } else {
+                    self.warn("instance swap properties whose default component isn't in the file were skipped");
+                }
                 continue;
             };
             let def = PropDef::InstanceSwap { default: c, preferred: Vec::new() };
@@ -969,9 +1051,14 @@ impl<'a> Ctx<'a> {
     /// outside components, and instances that would nest a component inside itself (directly or
     /// through other components), stay frames.
     fn resolve_instances(&mut self) {
+        let frames: BTreeSet<NodeId> = self.instances.iter().map(|(i, _)| *i).collect();
         let mut links: Vec<(NodeId, NodeId, &'a Value)> = Vec::new();
         for (inst, j) in std::mem::take(&mut self.instances) {
-            match text(j, "componentId").and_then(|r| self.component(r)) {
+            let main = text(j, "componentId");
+            match main.and_then(|r| self.component(r)) {
+                None if main.is_some_and(|r| self.capped_mains.contains(r)) => {
+                    self.warn("instances whose component was past the layer limit were imported as frames");
+                }
                 None => self.warn("instances of components that aren't in the file were imported as frames"),
                 Some(c) if self.doc.is_ancestor(c, inst) => self.warn("instances inside their own main component were imported as frames"),
                 Some(c) => links.push((inst, c, j)),
@@ -998,6 +1085,7 @@ impl<'a> Ctx<'a> {
                 linked.push((inst, j));
             }
         }
+        self.resolve_slots(&frames, &linked);
         // Overridden fields the file lists, on the instance and its layers.
         for (inst, j) in linked {
             for o in list(j, "overrides") {
@@ -1009,6 +1097,70 @@ impl<'a> Ctx<'a> {
                 if let Some(n) = self.doc.node_mut(id) {
                     n.overrides.extend(groups.into_iter().map(str::to_string));
                 }
+            }
+        }
+    }
+
+    /// `SLOT` layers. In a main component a slot is bound to its slot property: the one the layer
+    /// references, else the one named like it, else the main's only slot property left. In an
+    /// instance it follows its main's slot, and holds the instance's own content (kept across syncs)
+    /// unless the instance's value of the property is the main's default content (without the
+    /// values to compare, a slot holding layers keeps them as its own). A slot without a property
+    /// stays a frame. `frames`: every instance
+    /// layer of the file, `linked`: those that became instances.
+    fn resolve_slots(&mut self, frames: &BTreeSet<NodeId>, linked: &[(NodeId, &'a Value)]) {
+        let linked: BTreeMap<NodeId, &Value> = linked.iter().copied().collect();
+        let mut bound: BTreeSet<(NodeId, String)> = BTreeSet::new();
+        for (id, j) in std::mem::take(&mut self.slots) {
+            // The nearest main component or instance above the slot owns it; in an instance whose
+            // main isn't in the file (a frame), the slot stays a frame too.
+            let owner = self.doc.ancestors(id).into_iter().find_map(|a| match self.doc.node(a).map(|n| &n.kind) {
+                Some(NodeKind::Instance { component, .. }) => Some(linked.get(&a).map(|j| (*component, Some(*j)))),
+                Some(NodeKind::Component { .. }) => Some(Some((a, None))),
+                _ => frames.contains(&a).then_some(None),
+            });
+            let Some(owner) = owner else {
+                self.warn("slot layers without a matching slot property were imported as frames");
+                continue;
+            };
+            let Some((main, inst)) = owner else { continue };
+            let Some(NodeKind::Component { props, .. }) = self.doc.node(main).map(|n| &n.kind) else { continue };
+            let defs: Vec<&String> = props.iter().filter(|(_, d)| matches!(d, PropDef::Slot { .. })).map(|(k, _)| k).collect();
+            let layer = text(j, "name").unwrap_or_default();
+            let refs: Vec<&str> =
+                j.get("componentPropertyReferences").and_then(Value::as_object).into_iter().flatten().filter_map(|(_, v)| v.as_str()).collect();
+            // An instance's slot is matched against all of its main's slot properties.
+            let free: Vec<&&String> = defs.iter().filter(|d| inst.is_some() || !bound.contains(&(main, (**d).clone()))).collect();
+            let name = defs
+                .iter()
+                .find(|d| refs.contains(&d.as_str()))
+                .or_else(|| defs.iter().find(|d| short_prop_name(d) == layer))
+                .or_else(|| if free.len() == 1 { free.first().copied() } else { None })
+                .map(|d| (*d).clone());
+            let Some(n) = self.doc.node(id) else { continue };
+            let has_content = !n.children.is_empty();
+            let Some(inst) = inst else {
+                match name.filter(|p| bound.insert((main, p.clone()))) {
+                    Some(p) => {
+                        if let Some(n) = self.doc.node_mut(id) {
+                            n.prop_refs.insert("slot".into(), p);
+                        }
+                    }
+                    None => self.warn("slot layers without a matching slot property were imported as frames"),
+                }
+                continue;
+            };
+            let set = self.doc.node(main).and_then(|n| n.parent);
+            let default =
+                name.as_ref().and_then(|p| [Some(main), set].into_iter().flatten().find_map(|o| self.slot_defaults.get(&(o, p.clone())).copied()));
+            let value = name.as_ref().and_then(|p| inst.get("componentProperties")?.get(p)?.get("value"));
+            let own = name.is_some()
+                && match (value, default) {
+                    (Some(v), Some(d)) => v != d,
+                    _ => has_content,
+                };
+            if own && let Some(n) = self.doc.node_mut(id) {
+                n.overrides.insert("slot".into());
             }
         }
     }
