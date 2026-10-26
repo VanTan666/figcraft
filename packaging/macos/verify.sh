@@ -145,7 +145,7 @@ if [[ "$FAILED" != 0 ]]; then
 fi
 
 if [[ "$STRICT" = 1 ]]; then
-  result="signed (Developer ID, hardened runtime), notarized; DMG and enclosed/copied app verified"
+  result="signed (Developer ID, hardened runtime), notarized; DMG stapled; enclosed/copied app verified"
 else
   result="DMG and enclosed/copied app signatures intact; Developer ID and notarization not required (no signing secrets)"
 fi
